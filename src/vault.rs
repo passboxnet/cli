@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, anyhow, bail};
-use passbox_client::{Client, Connectivity, FileStore, Item, Store};
+use passbox_client::{Client, Connectivity, Error, FileStore, Item, Store};
 use passbox_core::totp::Totp;
 
 const REFERENCE_PREFIX: &str = "pbx://";
@@ -40,6 +40,55 @@ fn password(prompt: &str) -> anyhow::Result<String> {
     }
 }
 
+/// Finishes a sign-in or unlock that needs a second factor: reads a code
+/// from `PASSBOX_TWO_FACTOR_CODE` or prompts for it (three tries). A code
+/// that looks like a recovery code is sent as one. The device is
+/// remembered for 30 days unless `PASSBOX_REMEMBER_DEVICE=0`, because every
+/// `pbx` command signs in again.
+fn second_factor<T>(client: &Client, result: Result<T, Error>) -> anyhow::Result<T>
+where
+    T: Default,
+{
+    let methods = match result {
+        Err(Error::TwoFactorRequired { methods }) => methods,
+        other => return Ok(other?),
+    };
+    if !methods.iter().any(|m| m == "totp" || m == "recovery") {
+        bail!(
+            "this account only has security keys; sign in once in the web app and use a recovery code here"
+        );
+    }
+    let remember = std::env::var("PASSBOX_REMEMBER_DEVICE").map_or(true, |v| v != "0");
+    let from_env = std::env::var("PASSBOX_TWO_FACTOR_CODE")
+        .ok()
+        .filter(|c| !c.is_empty());
+    for attempt in 0..3 {
+        let code = match &from_env {
+            Some(code) => code.clone(),
+            None => rpassword::prompt_password("Two-factor code (or recovery code): ")
+                .context("could not read the code")?,
+        };
+        let method = if passbox_core::two_factor::looks_like_recovery_code(&code) {
+            "recovery"
+        } else {
+            "totp"
+        };
+        match client.complete_two_factor(method, &code, remember) {
+            Ok(remaining) => {
+                if let Some(remaining) = remaining {
+                    eprintln!("pbx: recovery code used; {remaining} left");
+                }
+                return Ok(T::default());
+            }
+            Err(Error::InvalidTwoFactorCode) if from_env.is_none() && attempt < 2 => {
+                eprintln!("pbx: wrong code, try again");
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+    bail!("wrong two-factor code")
+}
+
 /// Opens and unlocks the account on this machine.
 fn unlocked(dir: Option<PathBuf>) -> anyhow::Result<Client> {
     let store = store(dir)?;
@@ -48,7 +97,15 @@ fn unlocked(dir: Option<PathBuf>) -> anyhow::Result<Client> {
         .device_account()?
         .ok_or_else(|| anyhow!("not signed in; run `pbx signin` first"))?;
     let client = client(&account.server_url, store);
-    if client.unlock(&password("Master password: ")?)? == Connectivity::Offline {
+    let result = client.unlock(&password("Master password: ")?);
+    let connectivity = match result {
+        Err(Error::TwoFactorRequired { .. }) => {
+            second_factor(&client, result.map(drop))?;
+            Connectivity::Online
+        }
+        other => other?,
+    };
+    if connectivity == Connectivity::Offline {
         eprintln!("pbx: server not reachable, using the offline copy");
     }
     Ok(client)
@@ -67,7 +124,8 @@ pub fn signin(
             rpassword::prompt_password("Secret Key: ").context("could not read the Secret Key")?
         }
     };
-    client.sign_in(email, &password("Master password: ")?, &secret_key)?;
+    let result = client.sign_in(email, &password("Master password: ")?, &secret_key);
+    second_factor(&client, result)?;
     let items = client.items()?.len();
     client.lock();
     eprintln!("Signed in as {email} ({items} items).");
@@ -271,6 +329,7 @@ pub fn run(dir: Option<PathBuf>, command: &[String]) -> anyhow::Result<i32> {
         .args(args)
         .envs(resolved)
         .env_remove("PASSBOX_PASSWORD")
+        .env_remove("PASSBOX_TWO_FACTOR_CODE")
         .status()
         .with_context(|| format!("could not run {program}"))?;
     Ok(status.code().unwrap_or(1))

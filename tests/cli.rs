@@ -153,3 +153,51 @@ fn sign_in_read_secrets_and_run_commands() {
     let (ok, out, _) = pbx(data_dir, &["status"]);
     assert!(ok && out.contains("Not signed in"));
 }
+
+#[test]
+fn two_factor_sign_in_remembers_the_machine() {
+    let server = start_server();
+    let email = format!("{}@example.com", passbox_core::id::new_id().unwrap());
+    let setup = Client::new(&server, Arc::new(MemoryStore::new()));
+    let secret_key = setup.sign_up(&email, PASSWORD).unwrap();
+    let totp = setup.start_totp_setup().unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let code = passbox_core::totp::Totp::from_base32(&totp.secret)
+        .unwrap()
+        .generate(now);
+    let recovery = setup.confirm_totp_setup(&code).unwrap().unwrap();
+
+    let dir = tempfile::tempdir().unwrap();
+    let signin = |code: &str| {
+        Command::new(env!("CARGO_BIN_EXE_pbx"))
+            .args([
+                "signin",
+                "--server",
+                &server,
+                "--email",
+                &email,
+                "--secret-key",
+                &secret_key,
+            ])
+            .env("PASSBOX_DATA_DIR", dir.path())
+            .env("PASSBOX_PASSWORD", PASSWORD)
+            .env("PASSBOX_TWO_FACTOR_CODE", code)
+            .output()
+            .unwrap()
+    };
+    let output = signin("0000-0000-0000-0000");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("incorrect"));
+    let output = signin(&recovery[0].to_lowercase());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "{stderr}");
+    assert!(stderr.contains("9 left"), "{stderr}");
+
+    // The machine is remembered: no code needed for later commands.
+    let (ok, _, err) = pbx(dir.path(), &["list"]);
+    assert!(ok, "{err}");
+    assert!(!err.contains("recovery code used"), "{err}");
+}

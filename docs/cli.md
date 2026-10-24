@@ -19,6 +19,8 @@ The account and an encrypted offline copy of the vault are stored in the data di
 
 Every vault command unlocks the account again. The master password is prompted for, or read from `PASSBOX_PASSWORD` for unattended use. When the server is not reachable, `pbx` reads from the offline copy.
 
+With two-factor sign-in on, `pbx` asks for a code from the authenticator app or a recovery code (or reads it from `PASSBOX_TWO_FACTOR_CODE`) and remembers the machine for 30 days, so later commands only need the master password; set `PASSBOX_REMEMBER_DEVICE=0` to be asked every time. Security keys work in the web app only; on the command line use a code or a recovery code.
+
 ## Reading secrets
 
 ```sh
