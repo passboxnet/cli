@@ -1,0 +1,21 @@
+[package]
+name = "passbox-cli"
+description = "The Passbox command-line client."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[bin]]
+name = "pbx"
+path = "src/main.rs"
+
+[dependencies]
+passbox-core.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+
+[lints]
+workspace = true
