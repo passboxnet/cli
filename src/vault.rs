@@ -1,15 +1,21 @@
-//! Vault commands backed by the Passbox client.
+//! Signing in and opening the vault: with the account on this machine
+//! (master password) or with a service account token
+//! (`PASSBOX_SERVICE_ACCOUNT_TOKEN`).
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, anyhow, bail};
-use passbox_client::{Client, Connectivity, Error, FileStore, Item, Store};
-use passbox_core::totp::Totp;
+use passbox_client::agent::Backend;
+use passbox_client::{
+    Client, Connectivity, Error, FileStore, Item, ItemData, ServiceAccountClient, Store, Vault,
+};
+use passbox_core::agent_grant::{Decision, PrincipalKind};
+use serde_json::Value;
 
-const REFERENCE_PREFIX: &str = "pbx://";
+pub const TOKEN_ENV: &str = "PASSBOX_SERVICE_ACCOUNT_TOKEN";
 
-fn data_dir(dir: Option<PathBuf>) -> anyhow::Result<PathBuf> {
+pub fn data_dir(dir: Option<PathBuf>) -> anyhow::Result<PathBuf> {
     match dir {
         Some(dir) => Ok(dir),
         None => Ok(dirs::data_local_dir()
@@ -33,9 +39,22 @@ fn store(dir: Option<PathBuf>) -> anyhow::Result<Arc<dyn Store>> {
     Ok(Arc::new(FileStore::new(data_dir(dir)?)?))
 }
 
-fn password(prompt: &str) -> anyhow::Result<String> {
+/// How secrets may be asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Prompts {
+    /// Ask on the terminal when environment variables are missing.
+    Allowed,
+    /// Never read from the terminal (`pbx mcp`, whose standard input is the
+    /// agent's protocol stream).
+    Never,
+}
+
+fn password(prompt: &str, prompts: Prompts) -> anyhow::Result<String> {
     match std::env::var("PASSBOX_PASSWORD") {
         Ok(value) if !value.is_empty() => Ok(value),
+        _ if prompts == Prompts::Never => bail!(
+            "set {TOKEN_ENV} (recommended) or PASSBOX_PASSWORD; pbx mcp cannot ask for a password"
+        ),
         _ => rpassword::prompt_password(prompt).context("could not read the password"),
     }
 }
@@ -45,7 +64,7 @@ fn password(prompt: &str) -> anyhow::Result<String> {
 /// that looks like a recovery code is sent as one. The device is
 /// remembered for 30 days unless `PASSBOX_REMEMBER_DEVICE=0`, because every
 /// `pbx` command signs in again.
-fn second_factor<T>(client: &Client, result: Result<T, Error>) -> anyhow::Result<T>
+fn second_factor<T>(client: &Client, result: Result<T, Error>, prompts: Prompts) -> anyhow::Result<T>
 where
     T: Default,
 {
@@ -62,6 +81,9 @@ where
     let from_env = std::env::var("PASSBOX_TWO_FACTOR_CODE")
         .ok()
         .filter(|c| !c.is_empty());
+    if from_env.is_none() && prompts == Prompts::Never {
+        bail!("this machine needs a two-factor code; run any pbx command in a terminal once first");
+    }
     for attempt in 0..3 {
         let code = match &from_env {
             Some(code) => code.clone(),
@@ -90,17 +112,17 @@ where
 }
 
 /// Opens and unlocks the account on this machine.
-fn unlocked(dir: Option<PathBuf>) -> anyhow::Result<Client> {
+pub fn unlocked(dir: Option<PathBuf>, prompts: Prompts) -> anyhow::Result<Client> {
     let store = store(dir)?;
     let probe = Client::new("http://localhost", store.clone());
     let account = probe
         .device_account()?
-        .ok_or_else(|| anyhow!("not signed in; run `pbx signin` first"))?;
+        .ok_or_else(|| anyhow!("not signed in; run `pbx signin` first or set {TOKEN_ENV}"))?;
     let client = client(&account.server_url, store);
-    let result = client.unlock(&password("Master password: ")?);
+    let result = client.unlock(&password("Master password: ", prompts)?);
     let connectivity = match result {
         Err(Error::TwoFactorRequired { .. }) => {
-            second_factor(&client, result.map(drop))?;
+            second_factor(&client, result.map(drop), prompts)?;
             Connectivity::Online
         }
         other => other?,
@@ -124,8 +146,12 @@ pub fn signin(
             rpassword::prompt_password("Secret Key: ").context("could not read the Secret Key")?
         }
     };
-    let result = client.sign_in(email, &password("Master password: ")?, &secret_key);
-    second_factor(&client, result)?;
+    let result = client.sign_in(
+        email,
+        &password("Master password: ", Prompts::Allowed)?,
+        &secret_key,
+    );
+    second_factor(&client, result, Prompts::Allowed)?;
     let items = client.items()?.len();
     client.lock();
     eprintln!("Signed in as {email} ({items} items).");
@@ -138,199 +164,161 @@ pub fn signout(dir: Option<PathBuf>) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn status(dir: Option<PathBuf>) -> anyhow::Result<()> {
-    match Client::new("http://localhost", store(dir)?).device_account()? {
+pub fn status(dir: Option<PathBuf>, json: bool) -> anyhow::Result<()> {
+    let account = Client::new("http://localhost", store(dir)?).device_account()?;
+    let token = std::env::var(TOKEN_ENV).ok().filter(|t| !t.trim().is_empty());
+    if json {
+        let value = serde_json::json!({
+            "signedIn": account.is_some(),
+            "email": account.as_ref().map(|a| a.email.as_str()),
+            "server": account.as_ref().map(|a| a.server_url.as_str()),
+            "serviceAccount": token.as_deref().and_then(|t| passbox_core::service_account::Token::parse(t).ok()).map(|t| t.id().to_owned()),
+        });
+        println!("{}", serde_json::to_string_pretty(&value)?);
+        return Ok(());
+    }
+    if let Some(token) = token {
+        match passbox_core::service_account::Token::parse(&token) {
+            Ok(t) => println!("Service account {} ({TOKEN_ENV})", t.id()),
+            Err(_) => println!("{TOKEN_ENV} is set but is not a service account token"),
+        }
+    }
+    match account {
         Some(account) => println!("{} on {}", account.email, account.server_url),
         None => println!("Not signed in."),
     }
     Ok(())
 }
 
-pub fn list(dir: Option<PathBuf>, vault: Option<&str>, json: bool) -> anyhow::Result<()> {
-    let client = unlocked(dir)?;
-    let vaults = client.vaults()?;
-    let vault_id = match vault {
-        Some(query) => Some(
-            vaults
-                .iter()
-                .find(|v| v.id == query || v.name.eq_ignore_ascii_case(query))
-                .map(|v| v.id.clone())
-                .ok_or_else(|| anyhow!("no vault named {query:?}"))?,
-        ),
-        None => None,
-    };
-    let items: Vec<Item> = client
-        .items()?
-        .into_iter()
-        .filter(|i| vault_id.as_ref().is_none_or(|v| &i.vault_id == v))
-        .collect();
-    if json {
-        let rows: Vec<_> = items
-            .iter()
-            .map(|i| {
-                serde_json::json!({
-                    "id": i.id,
-                    "title": i.data.title,
-                    "category": i.data.category,
-                    "vault": vaults.iter().find(|v| v.id == i.vault_id).map(|v| v.name.as_str()),
-                })
-            })
-            .collect();
-        println!("{}", serde_json::to_string_pretty(&rows)?);
-    } else {
-        for item in items {
-            let vault = vaults
-                .iter()
-                .find(|v| v.id == item.vault_id)
-                .map_or("", |v| v.name.as_str());
-            println!("{}  {:<32}  {}", item.id, item.data.title, vault);
+/// The vault access a command works with.
+pub enum Session {
+    Account(Client),
+    Service(ServiceAccountClient),
+}
+
+impl Session {
+    /// Uses `PASSBOX_SERVICE_ACCOUNT_TOKEN` when it is set (with
+    /// `PASSBOX_SERVER`, or the server of the account on this machine), the
+    /// account on this machine otherwise.
+    pub fn open(dir: Option<PathBuf>, prompts: Prompts) -> anyhow::Result<Self> {
+        let Some(token) = std::env::var(TOKEN_ENV).ok().filter(|t| !t.trim().is_empty()) else {
+            return Ok(Self::Account(unlocked(dir, prompts)?));
+        };
+        let server = match std::env::var("PASSBOX_SERVER").ok().filter(|s| !s.is_empty()) {
+            Some(server) => server,
+            None => Client::new("http://localhost", store(dir)?)
+                .device_account()?
+                .map(|a| a.server_url)
+                .ok_or_else(|| anyhow!("set PASSBOX_SERVER to the server of the service account"))?,
+        };
+        let client = ServiceAccountClient::connect(&server, &token)
+            .context("could not use the service account")?;
+        for problem in client.errors()? {
+            eprintln!("pbx: {problem}");
+        }
+        Ok(Self::Service(client))
+    }
+
+    pub fn vault_list(&self) -> anyhow::Result<Vec<Vault>> {
+        Ok(Backend::vaults(self)?.into_iter().map(|(v, _)| v).collect())
+    }
+
+    pub fn item(&self, id: &str) -> anyhow::Result<Item> {
+        Ok(match self {
+            Self::Account(c) => c.item(id)?,
+            Self::Service(c) => c.item(id)?,
+        })
+    }
+
+    pub fn update_item(&self, id: &str, data: &ItemData) -> anyhow::Result<()> {
+        match self {
+            Self::Account(c) => c.update_item(id, data)?,
+            Self::Service(c) => c.update_item(id, data)?,
+        }
+        Ok(())
+    }
+
+    pub fn trash_item(&self, id: &str) -> anyhow::Result<()> {
+        match self {
+            Self::Account(c) => c.trash_item(id)?,
+            Self::Service(c) => c.trash_item(id)?,
+        }
+        Ok(())
+    }
+
+    pub fn delete_item(&self, id: &str) -> anyhow::Result<()> {
+        match self {
+            Self::Account(c) => c.delete_item(id)?,
+            Self::Service(c) => c.delete_item(id)?,
+        }
+        Ok(())
+    }
+
+    /// Locks the account (service accounts keep nothing on disk).
+    pub fn close(self) {
+        if let Self::Account(client) = self {
+            client.lock();
         }
     }
-    client.lock();
-    Ok(())
 }
 
-/// Finds one item by ID, exact title, or unique title substring.
-fn find_item<'a>(items: &'a [Item], query: &str) -> anyhow::Result<&'a Item> {
-    if let Some(item) = items.iter().find(|i| i.id == query) {
-        return Ok(item);
-    }
-    let exact: Vec<&Item> = items
-        .iter()
-        .filter(|i| i.data.title.eq_ignore_ascii_case(query))
-        .collect();
-    let matches = if exact.is_empty() {
-        let q = query.to_lowercase();
-        items
-            .iter()
-            .filter(|i| i.data.title.to_lowercase().contains(&q))
-            .collect()
-    } else {
-        exact
-    };
-    match matches.as_slice() {
-        [item] => Ok(item),
-        [] => bail!("no item matches {query:?}"),
-        many => bail!(
-            "{} items match {query:?}; use the ID: {}",
-            many.len(),
-            many.iter()
-                .map(|i| format!("{} ({})", i.data.title, i.id))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-    }
-}
-
-/// Returns a field's value; TOTP fields return the current code.
-fn field_value(item: &Item, field: &str) -> anyhow::Result<String> {
-    let found = item
-        .data
-        .fields
-        .iter()
-        .find(|f| f.id == field || f.label.eq_ignore_ascii_case(field));
-    let value = match (field, found) {
-        ("notes", None) => return Ok(item.data.notes.clone()),
-        (_, Some(f)) if !f.value.is_empty() => f,
-        _ => bail!("{:?} has no field {field:?}", item.data.title),
-    };
-    if value.field_type == passbox_client::FieldType::Totp {
-        let totp = Totp::parse(&value.value)?;
-        return Ok(totp.generate(crate::now()?));
-    }
-    Ok(value.value.clone())
-}
-
-pub fn get(
-    dir: Option<PathBuf>,
-    query: &str,
-    field: Option<&str>,
-    json: bool,
-) -> anyhow::Result<()> {
-    let client = unlocked(dir)?;
-    let items = client.items()?;
-    let item = find_item(&items, query)?;
-    if let Some(field) = field {
-        println!("{}", field_value(item, field)?);
-    } else if json {
-        println!("{}", serde_json::to_string_pretty(&item.data)?);
-    } else {
-        println!("{}", item.data.title);
-        for field in item.data.fields.iter().filter(|f| !f.value.is_empty()) {
-            let shown = match field.field_type {
-                passbox_client::FieldType::Concealed => {
-                    "••••••••  (use --field to print)".to_owned()
-                }
-                passbox_client::FieldType::Totp => field_value(item, &field.id)?,
-                _ => field.value.clone(),
-            };
-            println!("  {:<18} {shown}", format!("{}:", field.label));
-        }
-        if !item.data.notes.is_empty() {
-            println!(
-                "  {:<18} {}",
-                "Notes:",
-                item.data.notes.replace('\n', "\n                     ")
-            );
+impl Backend for Session {
+    fn principal(&self) -> passbox_client::Result<(PrincipalKind, String, String)> {
+        match self {
+            Self::Account(c) => c.principal(),
+            Self::Service(c) => c.principal(),
         }
     }
-    client.lock();
-    Ok(())
-}
 
-/// Resolves `pbx://<vault>/<item>/<field>`.
-fn resolve(client: &Client, reference: &str) -> anyhow::Result<String> {
-    let path = reference
-        .strip_prefix(REFERENCE_PREFIX)
-        .ok_or_else(|| anyhow!("secret references start with {REFERENCE_PREFIX}"))?;
-    let parts: Vec<&str> = path.split('/').collect();
-    let [vault, item, field] = parts.as_slice() else {
-        bail!("secret references look like pbx://<vault>/<item>/<field>");
-    };
-    let vault_id = client
-        .vaults()?
-        .into_iter()
-        .find(|v| v.id == *vault || v.name.eq_ignore_ascii_case(vault))
-        .ok_or_else(|| anyhow!("no vault named {vault:?}"))?
-        .id;
-    let items: Vec<Item> = client
-        .items()?
-        .into_iter()
-        .filter(|i| i.vault_id == vault_id)
-        .collect();
-    field_value(find_item(&items, item)?, field)
-}
-
-pub fn read(dir: Option<PathBuf>, reference: &str) -> anyhow::Result<()> {
-    let client = unlocked(dir)?;
-    let value = resolve(&client, reference)?;
-    client.lock();
-    println!("{value}");
-    Ok(())
-}
-
-/// Runs a command with resolved secret references. Returns its exit code.
-pub fn run(dir: Option<PathBuf>, command: &[String]) -> anyhow::Result<i32> {
-    let references: Vec<(String, String)> = std::env::vars()
-        .filter(|(_, value)| value.starts_with(REFERENCE_PREFIX))
-        .collect();
-    let mut resolved = Vec::new();
-    if !references.is_empty() {
-        let client = unlocked(dir)?;
-        for (name, reference) in references {
-            let value =
-                resolve(&client, &reference).with_context(|| format!("resolving ${name}"))?;
-            resolved.push((name, value));
+    fn vaults(&self) -> passbox_client::Result<Vec<(Vault, bool)>> {
+        match self {
+            Self::Account(c) => Backend::vaults(c),
+            Self::Service(c) => Backend::vaults(c),
         }
-        client.lock();
     }
-    let (program, args) = command.split_first().context("no command given")?;
-    let status = std::process::Command::new(program)
-        .args(args)
-        .envs(resolved)
-        .env_remove("PASSBOX_PASSWORD")
-        .env_remove("PASSBOX_TWO_FACTOR_CODE")
-        .status()
-        .with_context(|| format!("could not run {program}"))?;
-    Ok(status.code().unwrap_or(1))
+
+    fn items(&self) -> passbox_client::Result<Vec<Item>> {
+        match self {
+            Self::Account(c) => c.items(),
+            Self::Service(c) => c.items(),
+        }
+    }
+
+    fn create_item(&self, vault_id: &str, data: &ItemData) -> passbox_client::Result<String> {
+        match self {
+            Self::Account(c) => c.create_item(vault_id, data),
+            Self::Service(c) => c.create_item(vault_id, data),
+        }
+    }
+
+    fn refresh(&self) -> passbox_client::Result<()> {
+        match self {
+            Self::Account(c) => c.sync(),
+            Self::Service(c) => c.refresh(),
+        }
+    }
+
+    fn agent_call(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<Value>,
+    ) -> passbox_client::Result<Value> {
+        match self {
+            Self::Account(c) => c.agent_call(method, path, body),
+            Self::Service(c) => c.agent_call(method, path, body),
+        }
+    }
+
+    fn verify_decision(
+        &self,
+        request: &[u8],
+        decision: &str,
+        signature: &str,
+    ) -> passbox_client::Result<Decision> {
+        match self {
+            Self::Account(c) => c.verify_decision(request, decision, signature),
+            Self::Service(c) => c.verify_decision(request, decision, signature),
+        }
+    }
 }
