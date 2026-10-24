@@ -136,11 +136,7 @@ fn main() -> anyhow::Result<()> {
             println!("{value}");
         }
         Command::Totp { secret } => {
-            let totp = if secret.starts_with("otpauth://") {
-                Totp::from_uri(&secret)?
-            } else {
-                Totp::from_base32(&secret)?
-            };
+            let totp = Totp::parse(&secret)?;
             let now = now()?;
             println!(
                 "{}  ({}s remaining)",

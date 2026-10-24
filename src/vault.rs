@@ -167,11 +167,7 @@ fn field_value(item: &Item, field: &str) -> anyhow::Result<String> {
         _ => bail!("{:?} has no field {field:?}", item.data.title),
     };
     if value.field_type == passbox_client::FieldType::Totp {
-        let totp = if value.value.starts_with("otpauth://") {
-            Totp::from_uri(&value.value)?
-        } else {
-            Totp::from_base32(&value.value)?
-        };
+        let totp = Totp::parse(&value.value)?;
         return Ok(totp.generate(crate::now()?));
     }
     Ok(value.value.clone())
