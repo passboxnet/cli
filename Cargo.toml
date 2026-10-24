@@ -13,9 +13,19 @@ name = "pbx"
 path = "src/main.rs"
 
 [dependencies]
+passbox-client.workspace = true
 passbox-core.workspace = true
 anyhow.workspace = true
 clap.workspace = true
+dirs = "7"
+rpassword = "7"
+serde_json.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+passbox-server.workspace = true
+tempfile = "3"
+tokio.workspace = true
 
 [lints]
 workspace = true
