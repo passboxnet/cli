@@ -1,7 +1,10 @@
 //! `pbx`, the Passbox command-line client.
 //!
-//! Vault access (`pbx get`, `pbx run`, ...) follows once the sync API exists.
-//! For now the CLI exposes the offline tools from the core.
+//! Vault commands unlock the account on every call: the master password is
+//! read from `PASSBOX_PASSWORD` (for scripts and CI) or prompted for. Data is
+//! cached encrypted in the data directory, so reads work offline.
+
+mod vault;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -14,12 +17,60 @@ use passbox_core::totp::Totp;
 #[derive(Debug, Parser)]
 #[command(name = "pbx", version, about = "Passbox command-line client")]
 struct Cli {
+    /// Directory for the account and the encrypted offline cache.
+    #[arg(long, env = "PASSBOX_DATA_DIR", global = true)]
+    data_dir: Option<std::path::PathBuf>,
+
     #[command(subcommand)]
     command: Command,
 }
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Sign in to a Passbox server on this machine.
+    Signin {
+        /// Server URL, for example https://passbox.example.com.
+        #[arg(long, env = "PASSBOX_SERVER")]
+        server: String,
+        #[arg(long, env = "PASSBOX_EMAIL")]
+        email: String,
+        /// Secret Key from the Emergency Kit (prompted for if omitted).
+        #[arg(long, env = "PASSBOX_SECRET_KEY", hide_env_values = true)]
+        secret_key: Option<String>,
+    },
+    /// Remove the account and its cache from this machine.
+    Signout,
+    /// Show the account on this machine.
+    Status,
+    /// List items.
+    List {
+        /// Only items in this vault (name or ID).
+        #[arg(long)]
+        vault: Option<String>,
+        /// Print JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print an item or one of its fields.
+    Get {
+        /// Item title or ID.
+        item: String,
+        /// Field ID or label, for example `password`, `username` or `totp`
+        /// (prints the current code).
+        #[arg(long)]
+        field: Option<String>,
+        /// Print the item as JSON.
+        #[arg(long, conflicts_with = "field")]
+        json: bool,
+    },
+    /// Resolve a secret reference: pbx://<vault>/<item>/<field>.
+    Read { reference: String },
+    /// Run a command with secret references in environment variables
+    /// (values of the form pbx://<vault>/<item>/<field>) replaced by secrets.
+    Run {
+        #[arg(trailing_var_arg = true, required = true)]
+        command: Vec<String>,
+    },
     /// Generate a password or PIN.
     Generate {
         /// Number of characters.
@@ -44,8 +95,28 @@ enum Command {
     SecretKey,
 }
 
+fn now() -> anyhow::Result<u64> {
+    Ok(SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock is before 1970")?
+        .as_secs())
+}
+
 fn main() -> anyhow::Result<()> {
-    match Cli::parse().command {
+    let cli = Cli::parse();
+    let data_dir = cli.data_dir.clone();
+    match cli.command {
+        Command::Signin {
+            server,
+            email,
+            secret_key,
+        } => vault::signin(data_dir, &server, &email, secret_key)?,
+        Command::Signout => vault::signout(data_dir)?,
+        Command::Status => vault::status(data_dir)?,
+        Command::List { vault, json } => vault::list(data_dir, vault.as_deref(), json)?,
+        Command::Get { item, field, json } => vault::get(data_dir, &item, field.as_deref(), json)?,
+        Command::Read { reference } => vault::read(data_dir, &reference)?,
+        Command::Run { command } => std::process::exit(vault::run(data_dir, &command)?),
         Command::Generate {
             length,
             no_symbols,
@@ -70,10 +141,7 @@ fn main() -> anyhow::Result<()> {
             } else {
                 Totp::from_base32(&secret)?
             };
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .context("system clock is before 1970")?
-                .as_secs();
+            let now = now()?;
             println!(
                 "{}  ({}s remaining)",
                 totp.generate(now),
