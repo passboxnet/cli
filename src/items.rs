@@ -194,7 +194,7 @@ pub fn list(session: &Session, args: &ListArgs, json: bool) -> anyhow::Result<()
                 json!({
                     "id": i.id,
                     "title": i.data.title,
-                    "category": i.data.category,
+                    "category": i.data.category_name(),
                     "vault": vault_name(&vaults, &i.vault_id),
                     "vaultId": i.vault_id,
                     "tags": i.data.tags,
@@ -421,7 +421,7 @@ fn print_written(session: &Session, action: &str, id: &str, json: bool) -> anyho
             serde_json::to_string_pretty(&json!({
                 "id": item.id,
                 "title": item.data.title,
-                "category": item.data.category,
+                "category": item.data.category_name(),
                 "vault": vault_name(&vaults, &item.vault_id),
                 "vaultId": item.vault_id,
                 "revision": item.revision,
