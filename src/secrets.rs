@@ -15,7 +15,12 @@ use crate::vault::{Prompts, Session};
 fn resolve(session: &Session, reference: &str) -> anyhow::Result<String> {
     let vaults = session.vault_list()?;
     let items = Backend::items(session)?;
-    Ok(reference::resolve(&vaults, &items, reference, crate::now()?)?)
+    Ok(reference::resolve(
+        &vaults,
+        &items,
+        reference,
+        crate::now()?,
+    )?)
 }
 
 pub fn read(dir: Option<PathBuf>, reference: &str, json: bool) -> anyhow::Result<()> {
@@ -55,10 +60,7 @@ pub fn inject(
         && path.exists()
         && !force
     {
-        bail!(
-            "{} exists; add --force to replace it",
-            path.display()
-        );
+        bail!("{} exists; add --force to replace it", path.display());
     }
     let references = reference::template_references(&template);
     let session = Session::open(dir, Prompts::Allowed)?;
@@ -168,8 +170,7 @@ pub fn run(
     for file in env_files {
         vars.extend(read_env_file(file)?);
     }
-    let needs_vault =
-        !environments.is_empty() || vars.iter().any(|(_, v)| v.starts_with(PREFIX));
+    let needs_vault = !environments.is_empty() || vars.iter().any(|(_, v)| v.starts_with(PREFIX));
     let mut resolved: Vec<(String, String)> = Vec::new();
     if needs_vault {
         let session = Session::open(dir, Prompts::Allowed)?;
@@ -273,10 +274,8 @@ pub fn env(
             }
         }
         EnvFormat::Json => {
-            let map: serde_json::Map<String, serde_json::Value> = vars
-                .iter()
-                .map(|(k, v)| (k.clone(), json!(v)))
-                .collect();
+            let map: serde_json::Map<String, serde_json::Value> =
+                vars.iter().map(|(k, v)| (k.clone(), json!(v))).collect();
             out = format!("{}\n", serde_json::to_string_pretty(&map)?);
         }
     }

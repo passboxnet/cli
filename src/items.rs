@@ -218,7 +218,11 @@ pub fn list(session: &Session, args: &ListArgs, json: bool) -> anyhow::Result<()
 }
 
 /// Finds an item, optionally within one vault.
-fn locate(session: &Session, query: &str, vault: Option<&str>) -> anyhow::Result<(Item, Vec<Vault>)> {
+fn locate(
+    session: &Session,
+    query: &str,
+    vault: Option<&str>,
+) -> anyhow::Result<(Item, Vec<Vault>)> {
     let vaults = session.vault_list()?;
     let items: Vec<Item> = match vault {
         Some(v) => {
@@ -324,7 +328,12 @@ fn apply(data: &mut ItemData, values: &ValueArgs) -> anyhow::Result<()> {
         data.title = title.trim().to_owned();
     }
     if let Some(username) = &values.username {
-        data.set_field(field::USERNAME, "Username", FieldType::Text, username.as_str());
+        data.set_field(
+            field::USERNAME,
+            "Username",
+            FieldType::Text,
+            username.as_str(),
+        );
     }
     if let Some(url) = &values.url {
         data.set_field(field::URL, "Website", FieldType::Url, url.as_str());
@@ -397,12 +406,7 @@ fn apply(data: &mut ItemData, values: &ValueArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn print_written(
-    session: &Session,
-    action: &str,
-    id: &str,
-    json: bool,
-) -> anyhow::Result<()> {
+fn print_written(session: &Session, action: &str, id: &str, json: bool) -> anyhow::Result<()> {
     let item = session.item(id)?;
     let vaults = session.vault_list()?;
     let items = Backend::items(session)?;
@@ -452,7 +456,10 @@ fn default_vault(session: &Session) -> anyhow::Result<Vault> {
             .ok_or_else(|| {
                 anyhow!(
                     "choose a vault with --vault: {}",
-                    many.iter().map(|v| v.name.as_str()).collect::<Vec<_>>().join(", ")
+                    many.iter()
+                        .map(|v| v.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 )
             }),
     }

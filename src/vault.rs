@@ -64,7 +64,11 @@ fn password(prompt: &str, prompts: Prompts) -> anyhow::Result<String> {
 /// that looks like a recovery code is sent as one. The device is
 /// remembered for 30 days unless `PASSBOX_REMEMBER_DEVICE=0`, because every
 /// `pbx` command signs in again.
-fn second_factor<T>(client: &Client, result: Result<T, Error>, prompts: Prompts) -> anyhow::Result<T>
+fn second_factor<T>(
+    client: &Client,
+    result: Result<T, Error>,
+    prompts: Prompts,
+) -> anyhow::Result<T>
 where
     T: Default,
 {
@@ -166,7 +170,9 @@ pub fn signout(dir: Option<PathBuf>) -> anyhow::Result<()> {
 
 pub fn status(dir: Option<PathBuf>, json: bool) -> anyhow::Result<()> {
     let account = Client::new("http://localhost", store(dir)?).device_account()?;
-    let token = std::env::var(TOKEN_ENV).ok().filter(|t| !t.trim().is_empty());
+    let token = std::env::var(TOKEN_ENV)
+        .ok()
+        .filter(|t| !t.trim().is_empty());
     if json {
         let value = serde_json::json!({
             "signedIn": account.is_some(),
@@ -192,8 +198,8 @@ pub fn status(dir: Option<PathBuf>, json: bool) -> anyhow::Result<()> {
 
 /// The vault access a command works with.
 pub enum Session {
-    Account(Client),
-    Service(ServiceAccountClient),
+    Account(Box<Client>),
+    Service(Box<ServiceAccountClient>),
 }
 
 impl Session {
@@ -201,22 +207,30 @@ impl Session {
     /// `PASSBOX_SERVER`, or the server of the account on this machine), the
     /// account on this machine otherwise.
     pub fn open(dir: Option<PathBuf>, prompts: Prompts) -> anyhow::Result<Self> {
-        let Some(token) = std::env::var(TOKEN_ENV).ok().filter(|t| !t.trim().is_empty()) else {
-            return Ok(Self::Account(unlocked(dir, prompts)?));
+        let Some(token) = std::env::var(TOKEN_ENV)
+            .ok()
+            .filter(|t| !t.trim().is_empty())
+        else {
+            return Ok(Self::Account(Box::new(unlocked(dir, prompts)?)));
         };
-        let server = match std::env::var("PASSBOX_SERVER").ok().filter(|s| !s.is_empty()) {
+        let server = match std::env::var("PASSBOX_SERVER")
+            .ok()
+            .filter(|s| !s.is_empty())
+        {
             Some(server) => server,
             None => Client::new("http://localhost", store(dir)?)
                 .device_account()?
                 .map(|a| a.server_url)
-                .ok_or_else(|| anyhow!("set PASSBOX_SERVER to the server of the service account"))?,
+                .ok_or_else(|| {
+                    anyhow!("set PASSBOX_SERVER to the server of the service account")
+                })?,
         };
         let client = ServiceAccountClient::connect(&server, &token)
             .context("could not use the service account")?;
         for problem in client.errors()? {
             eprintln!("pbx: {problem}");
         }
-        Ok(Self::Service(client))
+        Ok(Self::Service(Box::new(client)))
     }
 
     pub fn vault_list(&self) -> anyhow::Result<Vec<Vault>> {
@@ -272,8 +286,8 @@ impl Backend for Session {
 
     fn vaults(&self) -> passbox_client::Result<Vec<(Vault, bool)>> {
         match self {
-            Self::Account(c) => Backend::vaults(c),
-            Self::Service(c) => Backend::vaults(c),
+            Self::Account(c) => Backend::vaults(&**c),
+            Self::Service(c) => Backend::vaults(&**c),
         }
     }
 

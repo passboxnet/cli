@@ -174,7 +174,11 @@ fn wait_of(args: &Value, default: Duration) -> Duration {
 fn strings(value: &Value) -> Vec<String> {
     value
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -186,7 +190,8 @@ fn grant_message(state: &GrantState) -> Value {
         ),
         GrantState::Approved { .. } => "Approved.".to_owned(),
         GrantState::Denied { .. } => {
-            "The user denied this request. Do not retry it; ask the user what they want instead.".to_owned()
+            "The user denied this request. Do not retry it; ask the user what they want instead."
+                .to_owned()
         }
         GrantState::Expired { .. } => {
             "The request expired without an answer. Nothing was run.".to_owned()
@@ -234,13 +239,17 @@ impl Server {
                     ttl: Some(Duration::from_secs(ttl * 60)),
                     max_uses: args["max_uses"].as_u64().unwrap_or(0),
                 };
-                let state = self.broker.request_access(&request, wait_of(args, DEFAULT_WAIT))?;
+                let state = self
+                    .broker
+                    .request_access(&request, wait_of(args, DEFAULT_WAIT))?;
                 let denied = matches!(state, GrantState::Denied { .. });
                 Ok(text_result(&grant_message(&state), denied))
             }
             "passbox_check_access" => {
                 let id = args["grant_id"].as_str().unwrap_or_default();
-                let state = self.broker.wait(id, wait_of(args, Duration::from_secs(60)))?;
+                let state = self
+                    .broker
+                    .wait(id, wait_of(args, Duration::from_secs(60)))?;
                 Ok(text_result(&grant_message(&state), false))
             }
             "passbox_run" => {
@@ -254,7 +263,10 @@ impl Server {
                     })
                     .unwrap_or_default();
                 let timeout = Duration::from_secs(
-                    args["timeout_seconds"].as_u64().unwrap_or(120).clamp(1, 600),
+                    args["timeout_seconds"]
+                        .as_u64()
+                        .unwrap_or(120)
+                        .clamp(1, 600),
                 );
                 let cwd = args["cwd"].as_str().map(PathBuf::from);
                 match self.broker.run(
