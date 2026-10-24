@@ -19,6 +19,16 @@ fn data_dir(dir: Option<PathBuf>) -> anyhow::Result<PathBuf> {
     }
 }
 
+/// A client that shows up as this machine in the account's device list.
+fn client(server_url: &str, store: Arc<dyn Store>) -> Client {
+    let client = Client::new(server_url, store);
+    let host = std::env::var("HOSTNAME")
+        .or_else(|_| std::env::var("COMPUTERNAME"))
+        .unwrap_or_default();
+    client.set_device(format!("pbx {host}").trim_end(), "cli");
+    client
+}
+
 fn store(dir: Option<PathBuf>) -> anyhow::Result<Arc<dyn Store>> {
     Ok(Arc::new(FileStore::new(data_dir(dir)?)?))
 }
@@ -37,7 +47,7 @@ fn unlocked(dir: Option<PathBuf>) -> anyhow::Result<Client> {
     let account = probe
         .device_account()?
         .ok_or_else(|| anyhow!("not signed in; run `pbx signin` first"))?;
-    let client = Client::new(&account.server_url, store);
+    let client = client(&account.server_url, store);
     if client.unlock(&password("Master password: ")?)? == Connectivity::Offline {
         eprintln!("pbx: server not reachable, using the offline copy");
     }
@@ -50,7 +60,7 @@ pub fn signin(
     email: &str,
     secret_key: Option<String>,
 ) -> anyhow::Result<()> {
-    let client = Client::new(server, store(dir)?);
+    let client = client(server, store(dir)?);
     let secret_key = match secret_key {
         Some(key) => key,
         None => {
