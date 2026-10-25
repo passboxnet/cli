@@ -183,12 +183,15 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Command::Mcp => mcp::serve(data_dir)?,
-        Command::Scan(args) => {
-            let code = scan::run(data_dir, args, json)?;
-            if code != 0 {
-                std::process::exit(code);
+        // Exit codes for hooks and CI: 0 clean, 1 secrets found, 2 error.
+        Command::Scan(args) => match scan::run(data_dir, args, json) {
+            Ok(0) => {}
+            Ok(code) => std::process::exit(code),
+            Err(error) => {
+                eprintln!("Error: {error:#}");
+                std::process::exit(2);
             }
-        }
+        },
         Command::Generate {
             length,
             no_symbols,

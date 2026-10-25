@@ -139,6 +139,68 @@ claude mcp add passbox --env PASSBOX_SERVER=https://passbox.example.com \
 
 `pbx mcp` never prompts. Without a service account token it needs `PASSBOX_PASSWORD` for the account on this machine. Actions are logged in your account's activity (and in `agent-audit.log` in the data directory).
 
+## Finding leaked secrets: `pbx scan`
+
+`pbx scan` looks for secrets in files, directories and staged changes: AWS access keys and secret keys, GitHub and GitLab tokens, Slack tokens and webhooks, Stripe secret keys, OpenAI, Anthropic, Google, npm and PyPI keys, private keys (PEM, OpenSSH, PGP), JSON Web Tokens, passwords in URLs (`postgres://user:password@host`) and long random values assigned to names like `*_TOKEN`, `*_SECRET`, `password` or `api_key`. It uses rules only; nothing leaves your machine and no AI is involved.
+
+```sh
+pbx scan                 # the current directory
+pbx scan .env src/       # files and directories
+pbx scan --staged        # only lines added in staged changes (for a pre-commit hook)
+pbx scan --json          # findings as JSON
+pbx scan --exclude fixtures --exclude .snap
+```
+
+Output names the file, line, column and kind, and shows only the first four characters and the length of each value, never the value:
+
+```
+.env:2:14  GitHub token  ghp_… (40 characters)  (GITHUB_TOKEN)
+2 secrets found in 1 file (31 files scanned).
+```
+
+The exit code is 0 when nothing was found, 1 when secrets were found (and not fixed), and 2 on errors. `.git`, `node_modules`, `target`, `dist` and similar directories, lockfiles, binary files and files over 2 MB are skipped. To keep few false positives, placeholders (`your_api_key_here`, `changeme`, `${VAR}`, `<token>`, `…EXAMPLE`), code (`process.env.X`, `config.token`, function calls) and references (`pbx://…`) are not reported. To silence a false positive, add `pbx-scan:ignore` anywhere on its line.
+
+### Moving secrets into Passbox: `--fix`
+
+```sh
+pbx scan --fix .env          # asks for each secret
+pbx scan --fix --yes .env    # fixes all (for scripts)
+pbx scan --fix --vault Dev config/
+```
+
+For every file, `--fix` stores the chosen secrets as hidden fields of one new **environment** item (titled `<folder>/<file>`, field names from the variable names, tag `pbx-scan`) and replaces each value in the file with a reference:
+
+- In `.env`-style files the value becomes the reference itself (`GITHUB_TOKEN=pbx://Private/<item>/GITHUB_TOKEN`), so the file works with `pbx run --env-file .env -- <command>`.
+- In other files it becomes a template marker (`{{ pbx://Private/<item>/API_KEY }}`); render the file with `pbx inject -i <file> -o <output>`.
+
+Private keys are reported but not rewritten; store key files with `pbx item create`. `--fix` cannot be combined with `--staged`. **Rotate every secret `--fix` moved**: the old value may still be in your history, in backups, in logs or with whoever cloned the repository.
+
+### Pre-commit hook
+
+`.git/hooks/pre-commit` (make it executable with `chmod +x`):
+
+```sh
+#!/bin/sh
+# Refuse commits that add secrets. Bypass once with: git commit --no-verify
+exec pbx scan --staged
+```
+
+With the [pre-commit](https://pre-commit.com) framework:
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: local
+    hooks:
+      - id: pbx-scan
+        name: pbx scan
+        entry: pbx scan --staged
+        language: system
+        pass_filenames: false
+```
+
+`pbx scan` needs no sign-in, so the hook also works on machines without a Passbox account.
+
 ## CI: GitHub Actions
 
 ```yaml
