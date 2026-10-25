@@ -137,6 +137,8 @@ claude mcp add passbox --env PASSBOX_SERVER=https://passbox.example.com \
   --env PASSBOX_SERVICE_ACCOUNT_TOKEN=pbx_sa_… -- pbx mcp
 ```
 
+`pbx mcp --allow-reveal` (or `PASSBOX_MCP_ALLOW_REVEAL=1`) additionally offers `passbox_reveal`, which returns one value to the agent. It is off by default; each reveal still needs your approval with the box "Allow revealing the value to the agent" ticked, and organizations can forbid it for their vaults (policy `allowAgentReveal`). See [ai-agents.md](architecture/ai-agents.md#revealing-a-value-passbox_reveal).
+
 `pbx mcp` never prompts. Without a service account token it needs `PASSBOX_PASSWORD` for the account on this machine. Actions are logged in your account's activity (and in `agent-audit.log` in the data directory).
 
 ## Finding leaked secrets: `pbx scan`
