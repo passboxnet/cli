@@ -335,4 +335,11 @@ impl Backend for Session {
             Self::Service(c) => c.verify_decision(request, decision, signature),
         }
     }
+
+    fn reveal_allowed(&self, vault_id: &str) -> passbox_client::Result<bool> {
+        match self {
+            Self::Account(c) => c.reveal_allowed(vault_id),
+            Self::Service(c) => c.reveal_allowed(vault_id),
+        }
+    }
 }

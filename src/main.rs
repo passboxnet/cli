@@ -103,8 +103,15 @@ enum Command {
     },
     /// Run the MCP server for AI agents on standard input and output.
     /// Secrets are used only with approval on another device and are never
-    /// returned to the agent.
-    Mcp,
+    /// returned to the agent (except with --allow-reveal, see below).
+    Mcp {
+        /// Offer `passbox_reveal`, which returns one value to the agent.
+        /// Off by default. Every reveal still needs an approval on which you
+        /// tick "Allow revealing the value to the agent", and organizations
+        /// can forbid it for their vaults.
+        #[arg(long, env = "PASSBOX_MCP_ALLOW_REVEAL")]
+        allow_reveal: bool,
+    },
     /// Find leaked secrets (API keys, tokens, private keys, passwords) in
     /// files, directories or staged changes. Exits with 1 when it finds
     /// any. Nothing leaves this machine.
@@ -182,7 +189,7 @@ fn main() -> anyhow::Result<()> {
                 std::process::exit(code);
             }
         }
-        Command::Mcp => mcp::serve(data_dir)?,
+        Command::Mcp { allow_reveal } => mcp::serve(data_dir, allow_reveal)?,
         // Exit codes for hooks and CI: 0 clean, 1 secrets found, 2 error.
         Command::Scan(args) => match scan::run(data_dir, args, json) {
             Ok(0) => {}
