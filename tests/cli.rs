@@ -1,36 +1,14 @@
 //! `pbx` against an in-process Passbox server.
 
-use std::net::SocketAddr;
 use std::process::Command;
 use std::sync::Arc;
 
 use passbox_client::{Client, FieldType, ItemCategory, ItemData, MemoryStore, field};
-use passbox_server::config::Config;
-use passbox_server::state::AppState;
 
 const PASSWORD: &str = "correct horse battery staple";
 
 fn start_server() -> String {
-    let (tx, rx) = std::sync::mpsc::channel::<SocketAddr>();
-    std::thread::spawn(move || {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        runtime.block_on(async move {
-            let db = passbox_server::db::connect("sqlite::memory:")
-                .await
-                .unwrap();
-            let app = passbox_server::routes::router(
-                &Config::default(),
-                AppState::load(db).await.unwrap(),
-            );
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            tx.send(listener.local_addr().unwrap()).unwrap();
-            axum::serve(listener, app).await.unwrap();
-        });
-    });
-    format!("http://{}", rx.recv().unwrap())
+    passbox_server::testing::spawn_server(|_, _| {})
 }
 
 fn pbx(data_dir: &std::path::Path, args: &[&str]) -> (bool, String, String) {
