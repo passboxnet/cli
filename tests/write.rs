@@ -497,3 +497,124 @@ fn mcp_server() {
         .collect();
     assert!(kinds.iter().any(|k| k == "agent_run"), "{kinds:?}");
 }
+
+/// A GitHub-style token assembled at run time (keeps this file clean for
+/// other scanners).
+fn test_token() -> String {
+    format!("ghp_{}", "Zx81Qw7Lm3Pv".repeat(3))
+}
+
+#[test]
+fn scan_reports_fixes_and_checks_staged_changes() {
+    let s = setup();
+    let project = tempfile::tempdir().unwrap();
+    let env = project.path().join(".env");
+    let token = test_token();
+    std::fs::write(
+        &env,
+        format!("# config\nGITHUB_TOKEN={token}\nAPI_URL=https://api.example.com\nDB_PASSWORD=\"Xk9#mQ2$vL7pR4tZ\"\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join("README.md"),
+        "Set API_KEY=your_api_key_here\n",
+    )
+    .unwrap();
+
+    // Report: exit code 1, JSON without the values.
+    let (ok, out, _) = pbx(&s, &["scan", project.path().to_str().unwrap(), "--json"]);
+    assert!(!ok);
+    assert!(
+        !out.contains(&token) && !out.contains("Xk9#mQ2$vL7pR4tZ"),
+        "{out}"
+    );
+    let report: Value = serde_json::from_str(&out).unwrap();
+    let findings = report["findings"].as_array().unwrap();
+    assert_eq!(findings.len(), 2, "{out}");
+    assert_eq!(findings[0]["rule"], "github-token");
+    assert_eq!(findings[0]["line"], 2);
+    assert_eq!(findings[1]["variable"], "DB_PASSWORD");
+    assert_eq!(report["filesScanned"], 2);
+
+    // --fix without a terminal needs --yes.
+    let (ok, _, err) = pbx(&s, &["scan", "--fix", env.to_str().unwrap()]);
+    assert!(!ok);
+    assert!(err.contains("--yes"), "{err}");
+
+    let (ok, _, err) = pbx(&s, &["scan", "--fix", "--yes", env.to_str().unwrap()]);
+    assert!(ok, "{err}");
+    assert!(err.contains("Rotate"), "{err}");
+    let rewritten = std::fs::read_to_string(&env).unwrap();
+    assert!(
+        !rewritten.contains(&token) && !rewritten.contains("Xk9#mQ2"),
+        "{rewritten}"
+    );
+    assert!(rewritten.contains("API_URL=https://api.example.com"));
+    let reference = rewritten
+        .lines()
+        .find_map(|l| l.strip_prefix("GITHUB_TOKEN="))
+        .unwrap()
+        .to_owned();
+    assert!(reference.starts_with("pbx://"), "{rewritten}");
+    assert!(rewritten.contains("DB_PASSWORD=\"pbx://"), "{rewritten}");
+
+    // The reference resolves to the secret, and the item is in the vault.
+    let (ok, out, err) = pbx(&s, &["read", &reference]);
+    assert!(ok, "{err}");
+    assert_eq!(out.trim(), token);
+    s.owner.sync().unwrap();
+    let item = s
+        .owner
+        .items()
+        .unwrap()
+        .into_iter()
+        .find(|i| i.data.category == ItemCategory::Environment)
+        .unwrap();
+    assert!(item.data.title.ends_with("/.env"), "{}", item.data.title);
+    assert_eq!(item.data.fields.len(), 2);
+    assert!(
+        item.data
+            .fields
+            .iter()
+            .all(|f| f.field_type == FieldType::Concealed)
+    );
+
+    // A clean scan exits with 0.
+    let (ok, _, err) = pbx(&s, &["scan", env.to_str().unwrap()]);
+    assert!(ok, "{err}");
+
+    // --staged scans only added lines of staged changes.
+    let vcs = |args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(project.path())
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    vcs(&["init", "-q"]);
+    std::fs::write(
+        project.path().join("deploy.sh"),
+        format!("echo ok\nexport TOKEN={token}\n"),
+    )
+    .unwrap();
+    std::fs::write(project.path().join("unstaged.sh"), format!("T={token}\n")).unwrap();
+    vcs(&["add", "deploy.sh"]);
+    let output = Command::new(env!("CARGO_BIN_EXE_pbx"))
+        .args(["scan", "--staged", "--json"])
+        .current_dir(project.path())
+        .env("PASSBOX_DATA_DIR", s.dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let findings = report["findings"].as_array().unwrap();
+    assert_eq!(findings.len(), 1, "{report}");
+    assert_eq!(findings[0]["path"], "deploy.sh");
+    assert_eq!(findings[0]["line"], 2);
+}

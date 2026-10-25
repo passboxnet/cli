@@ -8,6 +8,7 @@
 
 mod items;
 mod mcp;
+mod scan;
 mod secrets;
 mod vault;
 
@@ -104,6 +105,10 @@ enum Command {
     /// Secrets are used only with approval on another device and are never
     /// returned to the agent.
     Mcp,
+    /// Find leaked secrets (API keys, tokens, private keys, passwords) in
+    /// files, directories or staged changes. Exits with 1 when it finds
+    /// any. Nothing leaves this machine.
+    Scan(scan::ScanArgs),
     /// Generate a password or PIN.
     Generate {
         /// Number of characters.
@@ -178,6 +183,12 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Command::Mcp => mcp::serve(data_dir)?,
+        Command::Scan(args) => {
+            let code = scan::run(data_dir, args, json)?;
+            if code != 0 {
+                std::process::exit(code);
+            }
+        }
         Command::Generate {
             length,
             no_symbols,

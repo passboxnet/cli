@@ -303,7 +303,7 @@ fn stdin_value(used: &mut bool) -> anyhow::Result<String> {
 }
 
 /// A field ID from a label: lowercase letters, digits and underscores.
-fn field_id(label: &str) -> String {
+pub(crate) fn field_id(label: &str) -> String {
     let id: String = label
         .trim()
         .chars()
@@ -440,7 +440,7 @@ fn print_written(session: &Session, action: &str, id: &str, json: bool) -> anyho
     Ok(())
 }
 
-fn default_vault(session: &Session) -> anyhow::Result<Vault> {
+pub(crate) fn default_vault(session: &Session) -> anyhow::Result<Vault> {
     let writable: Vec<Vault> = Backend::vaults(session)?
         .into_iter()
         .filter(|(_, w)| *w)

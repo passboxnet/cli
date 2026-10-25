@@ -21,6 +21,8 @@ dirs = "7"
 rpassword = "7"
 serde_json.workspace = true
 clap_complete = "=4.6.11"
+# Rules of `pbx scan`; already used by other dependencies.
+regex = "=1.13.1"
 
 [dev-dependencies]
 axum.workspace = true
