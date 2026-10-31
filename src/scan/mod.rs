@@ -1,5 +1,5 @@
 //! `pbx scan`: finds leaked secrets in files, directories and staged git
-//! changes (K10). Rules only, no AI, nothing leaves the machine. With
+//! changes. Rules only, no AI, nothing leaves the machine. With
 //! `--fix`, found secrets are stored in Passbox (one environment item per
 //! file) and replaced in the file by `pbx://` references.
 

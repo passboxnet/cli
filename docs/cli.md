@@ -1,11 +1,12 @@
 # Command-line client (`pbx`)
 
-`pbx` gives scripts, developers, CI pipelines and AI agents access to Passbox. It uses the Rust client (`crates/client`), so it shares the encryption, sync and offline cache with the native apps.
+`pbx` gives scripts, developers, CI pipelines and AI agents access to Passbox. It uses the Rust client (`passbox-client` from [passboxnet/core](https://github.com/passboxnet/core)), so it shares the encryption, sync and offline cache with the native apps.
 
 ## Install
 
 ```sh
-cargo install --path crates/cli   # installs `pbx`
+cargo install --locked --git https://github.com/passboxnet/cli passbox-cli   # installs `pbx`
+cargo install --locked --path .                                              # the same from a checkout
 ```
 
 Shell completions:
