@@ -4,7 +4,7 @@ description = "The Passbox command-line client."
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/passboxnet/passbox-cli"
+repository = "https://github.com/passboxnet/cli"
 rust-version = "1.87"
 publish = false
 
@@ -13,8 +13,8 @@ name = "pbx"
 path = "src/main.rs"
 
 [dependencies]
-passbox-client = { git = "https://github.com/passboxnet/passbox-core", tag = "v0.1.0" }
-passbox-core = { git = "https://github.com/passboxnet/passbox-core", tag = "v0.1.0" }
+passbox-client = { git = "https://github.com/passboxnet/core", tag = "v0.1.0" }
+passbox-core = { git = "https://github.com/passboxnet/core", tag = "v0.1.0" }
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 dirs = "7"
@@ -26,7 +26,7 @@ regex = "=1.13.1"
 
 [dev-dependencies]
 axum = "0.8"
-passbox-server = { git = "https://github.com/passboxnet/passbox-server", tag = "v0.1.0" }
+passbox-server = { git = "https://github.com/passboxnet/server", tag = "v0.1.0" }
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
 

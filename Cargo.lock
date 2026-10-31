@@ -1817,7 +1817,7 @@ dependencies = [
  "clap_complete",
  "dirs",
  "passbox-client",
- "passbox-core",
+ "passbox-core 0.1.0 (git+https://github.com/passboxnet/core?tag=v0.1.0)",
  "passbox-server",
  "regex",
  "rpassword",
@@ -1829,15 +1829,41 @@ dependencies = [
 [[package]]
 name = "passbox-client"
 version = "0.1.0"
-source = "git+https://github.com/passboxnet/passbox-core?tag=v0.1.0#3221491caa09a2d2bf2427d7a04d7b1dc2f41d71"
+source = "git+https://github.com/passboxnet/core?tag=v0.1.0#3221491caa09a2d2bf2427d7a04d7b1dc2f41d71"
 dependencies = [
  "data-encoding",
- "passbox-core",
+ "passbox-core 0.1.0 (git+https://github.com/passboxnet/core?tag=v0.1.0)",
  "serde",
  "serde_json",
  "thiserror",
  "ureq",
  "zeroize",
+]
+
+[[package]]
+name = "passbox-core"
+version = "0.1.0"
+source = "git+https://github.com/passboxnet/core?tag=v0.1.0#3221491caa09a2d2bf2427d7a04d7b1dc2f41d71"
+dependencies = [
+ "argon2",
+ "chacha20poly1305",
+ "data-encoding",
+ "ed25519-dalek",
+ "getrandom 0.4.3",
+ "hkdf 0.13.0",
+ "hmac 0.13.0",
+ "opaque-ke",
+ "p256",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2 0.10.9",
+ "sha2 0.11.0",
+ "thiserror",
+ "x-wing",
+ "zeroize",
+ "zxcvbn",
 ]
 
 [[package]]
@@ -1870,7 +1896,7 @@ dependencies = [
 [[package]]
 name = "passbox-server"
 version = "0.1.0"
-source = "git+https://github.com/passboxnet/passbox-server?tag=v0.1.0#27a8a71098d0007a146312eeb7c57e77bed80ae6"
+source = "git+https://github.com/passboxnet/server?tag=v0.1.0#27a8a71098d0007a146312eeb7c57e77bed80ae6"
 dependencies = [
  "anyhow",
  "axum",
@@ -1880,7 +1906,7 @@ dependencies = [
  "hmac 0.13.0",
  "http-body-util",
  "lettre",
- "passbox-core",
+ "passbox-core 0.1.0 (git+https://github.com/passboxnet/passbox-core?tag=v0.1.0)",
  "serde",
  "serde_json",
  "sha2 0.11.0",
