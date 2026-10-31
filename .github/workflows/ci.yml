@@ -52,6 +52,9 @@ jobs:
       # A superuser (the image's POSTGRES_USER): every test run creates and
       # drops a database of its own with the production roles.
       PASSBOX_TEST_DATABASE_URL: postgres://passbox:passbox@localhost:5432/passbox_test
+      # The tests build passbox-server, whose queries are checked against its
+      # committed .sqlx cache.
+      SQLX_OFFLINE: "true"
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
