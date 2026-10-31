@@ -40,7 +40,7 @@ export PASSBOX_SERVICE_ACCOUNT_TOKEN=pbx_sa_…   # from your CI secret store
 pbx read pbx://CI/Database/password
 ```
 
-Every vault command (`item`, `list`, `get`, `read`, `inject`, `run`, `env`, `mcp`) then uses the service account instead of the account on this machine. Nothing is written to disk. The token's secret never leaves the machine: `pbx` derives an authentication key for the server and decrypts the service account's private key locally. A service account never has more access than the person who created it; revoking it in the web app stops it at once. See [architecture/service-accounts.md](architecture/service-accounts.md).
+Every vault command (`item`, `list`, `get`, `read`, `inject`, `run`, `env`, `mcp`) then uses the service account instead of the account on this machine. Nothing is written to disk. The token's secret never leaves the machine: `pbx` derives an authentication key for the server and decrypts the service account's private key locally. A service account never has more access than the person who created it; revoking it in the web app stops it at once. See [architecture/service-accounts.md](https://github.com/passboxnet/passbox-core/blob/main/docs/architecture/service-accounts.md).
 
 ## JSON output
 
@@ -128,7 +128,7 @@ Prefer `pbx env … -- <command>`: the values exist only in the child process's 
 
 `pbx mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server on standard input and output. Agents such as Claude Code, Claude Desktop, Cursor or VS Code can find items and *use* secrets (run a command, write a config file) without ever seeing them: secret values never appear in a tool result, command output is redacted, and every use needs your approval on another device (Passbox web or desktop app). There is no terminal prompt, because the agent could answer it.
 
-Tools: `passbox_search` (metadata only), `passbox_request_access`, `passbox_check_access`, `passbox_run`, `passbox_inject`, `passbox_create_item`. Setup for each agent, the approval flow and the threat model are in [architecture/ai-agents.md](architecture/ai-agents.md).
+Tools: `passbox_search` (metadata only), `passbox_request_access`, `passbox_check_access`, `passbox_run`, `passbox_inject`, `passbox_create_item`. Setup for each agent, the approval flow and the threat model are in [architecture/ai-agents.md](https://github.com/passboxnet/passbox-core/blob/main/docs/architecture/ai-agents.md).
 
 Quick start with a service account limited to one vault (recommended):
 
@@ -137,7 +137,7 @@ claude mcp add passbox --env PASSBOX_SERVER=https://passbox.example.com \
   --env PASSBOX_SERVICE_ACCOUNT_TOKEN=pbx_sa_… -- pbx mcp
 ```
 
-`pbx mcp --allow-reveal` (or `PASSBOX_MCP_ALLOW_REVEAL=1`) additionally offers `passbox_reveal`, which returns one value to the agent. It is off by default; each reveal still needs your approval with the box "Allow revealing the value to the agent" ticked, and organizations can forbid it for their vaults (policy `allowAgentReveal`). See [ai-agents.md](architecture/ai-agents.md#revealing-a-value-passbox_reveal).
+`pbx mcp --allow-reveal` (or `PASSBOX_MCP_ALLOW_REVEAL=1`) additionally offers `passbox_reveal`, which returns one value to the agent. It is off by default; each reveal still needs your approval with the box "Allow revealing the value to the agent" ticked, and organizations can forbid it for their vaults (policy `allowAgentReveal`). See [ai-agents.md](https://github.com/passboxnet/passbox-core/blob/main/docs/architecture/ai-agents.md#revealing-a-value-passbox_reveal).
 
 `pbx mcp` never prompts. Without a service account token it needs `PASSBOX_PASSWORD` for the account on this machine. Actions are logged in your account's activity (and in `agent-audit.log` in the data directory).
 
