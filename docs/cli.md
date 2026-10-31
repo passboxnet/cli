@@ -216,7 +216,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install pbx
-        run: cargo install --locked --git https://github.com/relationsoftware/passbox passbox-cli
+        run: cargo install --locked --git https://github.com/passboxnet/passbox passbox-cli
       - name: Deploy
         env:
           DATABASE_URL: pbx://CI/Production database/url
