@@ -2,8 +2,6 @@
 
 `pbx`, the command-line client of [Passbox](https://passbox.net), an open-source password manager with passkeys, a built-in authenticator and single sign-on. It also runs an MCP server, so AI agents get exactly the secrets a service account allows. See [docs/cli.md](docs/cli.md).
 
-> **Status: early development.** The cryptographic design is a draft and has not been audited. Do not store real secrets in Passbox yet.
-
 ## Development
 
 ```sh
