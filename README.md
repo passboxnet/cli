@@ -2,6 +2,24 @@
 
 `pbx`, the command-line client of [Passbox](https://passbox.net), an open-source password manager with passkeys, a built-in authenticator and single sign-on. It also runs an MCP server, so AI agents get exactly the secrets a service account allows. See [docs/cli.md](docs/cli.md).
 
+## Install
+
+On macOS and Linux:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/passboxnet/cli/main/install.sh | sh
+```
+
+This downloads the latest release for your system, verifies its SHA-256 checksum and installs `pbx` to `~/.local/bin` (change it with `PBX_INSTALL_DIR`, pick a version with `PBX_VERSION`). It never asks for root.
+
+On Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/passboxnet/cli/main/install.ps1 | iex
+```
+
+You can also download an archive for your platform from the [releases](https://github.com/passboxnet/cli/releases) and check it against `SHA256SUMS`, or build from source with Rust: `cargo install --locked --git https://github.com/passboxnet/cli passbox-cli`. Details, including how to verify the build provenance, are in [docs/cli.md](docs/cli.md#install).
+
 ## Development
 
 ```sh

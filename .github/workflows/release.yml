@@ -1,0 +1,179 @@
+# Builds pbx for macOS, Linux and Windows and publishes a GitHub release.
+#
+# Runs on version tags (v*, matching Cargo.toml). A manual dispatch builds and
+# packages everything without publishing, to try the pipeline before tagging.
+#
+# Every target is built on a native runner, so the binary can be run once
+# before it is packaged (x86_64 macOS is cross-compiled on Apple silicon and
+# only checked for its architecture). Linux binaries link musl statically and
+# run on any distribution. The release carries one archive per target,
+# pbx-<version>-<target>.tar.gz (.zip on Windows) with the binary, LICENSE and
+# README, a SHA256SUMS file and a build provenance attestation.
+#
+# Verify a download:
+#   sha256sum --check --ignore-missing SHA256SUMS
+#   gh attestation verify pbx-<version>-<target>.tar.gz --repo passboxnet/cli
+#
+# No build cache: release binaries are built from a clean state.
+#
+# Actions are pinned to commit SHAs (tag in the comment), as in
+# passboxnet/server; update them together.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Crate version
+        id: version
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: The tag matches the crate version
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          test "v$VERSION" = "$GITHUB_REF_NAME" || { echo "::error::tag $GITHUB_REF_NAME != Cargo.toml $VERSION"; exit 1; }
+
+  build:
+    name: ${{ matrix.target }}
+    needs: version
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            cross: true
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    env:
+      TARGET: ${{ matrix.target }}
+      NAME: pbx-${{ needs.version.outputs.version }}-${{ matrix.target }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master (2026-10-16)
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+
+      # ring compiles C code; musl-gcc builds it against musl.
+      - name: musl tools
+        if: contains(matrix.target, 'linux-musl')
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q musl-tools
+          echo "CC_${TARGET//-/_}=musl-gcc" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: cargo build --release --locked --target "$TARGET"
+
+      - name: Check the binary
+        run: |
+          bin="target/$TARGET/release/pbx"
+          [ -f "$bin.exe" ] && bin="$bin.exe"
+          if command -v file > /dev/null; then file "$bin"; fi
+          case "$TARGET" in
+            *-linux-musl) file "$bin" | grep -Eq 'static(ally|-pie) linked' ;;
+            x86_64-apple-darwin) file "$bin" | grep -q 'x86_64' ;;
+          esac
+          if [ "${{ matrix.cross }}" != true ]; then
+            "$bin" --version
+            "$bin" --help > /dev/null
+          fi
+
+      - name: Package (tar.gz)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir "$NAME"
+          cp "target/$TARGET/release/pbx" LICENSE README.md "$NAME/"
+          tar -czf "$NAME.tar.gz" "$NAME"
+          echo "ASSET=$NAME.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Package (zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path $env:NAME | Out-Null
+          Copy-Item "target/$env:TARGET/release/pbx.exe", LICENSE, README.md -Destination $env:NAME
+          Compress-Archive -Path $env:NAME -DestinationPath "$env:NAME.zip"
+          "ASSET=$env:NAME.zip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ env.ASSET }}
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+      id-token: write # provenance attestation
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum pbx-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/pbx-*
+            dist/SHA256SUMS
+
+      - name: Create the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes --verify-tag

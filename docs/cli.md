@@ -4,12 +4,62 @@
 
 ## Install
 
+On macOS and Linux:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/passboxnet/cli/main/install.sh | sh
+```
+
+The script downloads the latest release for your system, checks it against the published SHA-256 checksums and puts `pbx` in `~/.local/bin`. It never asks for root. Choose another directory with `PBX_INSTALL_DIR`, a specific version with `PBX_VERSION`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/passboxnet/cli/main/install.sh | PBX_VERSION=0.1.0 PBX_INSTALL_DIR="$HOME/bin" sh
+```
+
+On Windows (PowerShell), `pbx.exe` goes to `%LOCALAPPDATA%\Programs\pbx`:
+
+```powershell
+irm https://raw.githubusercontent.com/passboxnet/cli/main/install.ps1 | iex
+```
+
+Check that it works with `pbx --version`.
+
+### Manual download
+
+Every [release](https://github.com/passboxnet/cli/releases) has an archive per platform and a `SHA256SUMS` file:
+
+| System | Archive |
+| --- | --- |
+| macOS, Apple silicon | `pbx-<version>-aarch64-apple-darwin.tar.gz` |
+| macOS, Intel | `pbx-<version>-x86_64-apple-darwin.tar.gz` |
+| Linux, x86_64 (any distribution, static) | `pbx-<version>-x86_64-unknown-linux-musl.tar.gz` |
+| Linux, ARM64 (any distribution, static) | `pbx-<version>-aarch64-unknown-linux-musl.tar.gz` |
+| Windows, x64 | `pbx-<version>-x86_64-pc-windows-msvc.zip` |
+
+Download the archive and `SHA256SUMS` into one directory, check the archive, unpack it and put `pbx` somewhere on your `PATH`:
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS     # on macOS: shasum -a 256 --check --ignore-missing SHA256SUMS
+tar -xzf pbx-0.1.0-x86_64-unknown-linux-musl.tar.gz
+install -m 755 pbx-0.1.0-x86_64-unknown-linux-musl/pbx ~/.local/bin/pbx
+```
+
+The archives are built by GitHub Actions from the release tag. To confirm that a file came from this repository's release workflow, use the [GitHub CLI](https://cli.github.com):
+
+```sh
+gh attestation verify pbx-0.1.0-x86_64-unknown-linux-musl.tar.gz --repo passboxnet/cli
+```
+
+### From source
+
+With a [Rust toolchain](https://rustup.rs):
+
 ```sh
 cargo install --locked --git https://github.com/passboxnet/cli passbox-cli   # installs `pbx`
 cargo install --locked --path .                                              # the same from a checkout
 ```
 
-Shell completions:
+### Shell completions
 
 ```sh
 pbx completions bash > ~/.local/share/bash-completion/completions/pbx
@@ -217,7 +267,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install pbx
-        run: cargo install --locked --git https://github.com/passboxnet/cli passbox-cli
+        env:
+          PBX_VERSION: 0.1.0
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/passboxnet/cli/v$PBX_VERSION/install.sh" | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Deploy
         env:
           DATABASE_URL: pbx://CI/Production database/url
@@ -226,6 +280,8 @@ jobs:
       - name: Render the config
         run: pbx inject -i config/prod.tpl -o config/prod.yml
 ```
+
+This downloads the release binary (a few seconds, no Rust toolchain needed) and verifies its checksum. Pinning `PBX_VERSION` and loading the script from the same tag keeps builds reproducible; raise the version when you want a newer `pbx`.
 
 Give the CI service account read access to a dedicated vault, an expiry, and store only its token in the repository's secrets. GitHub masks the token itself; values `pbx run` injects are not known to GitHub, so make sure your scripts do not print them. GitLab CI and other systems work the same way (`PASSBOX_SERVICE_ACCOUNT_TOKEN` as a masked, protected variable).
 
