@@ -837,7 +837,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1817,7 +1817,7 @@ dependencies = [
  "clap_complete",
  "dirs",
  "passbox-client",
- "passbox-core 0.1.0 (git+https://github.com/passboxnet/core?tag=v0.1.0)",
+ "passbox-core 0.1.6",
  "passbox-server",
  "regex",
  "rpassword",
@@ -1828,42 +1828,16 @@ dependencies = [
 
 [[package]]
 name = "passbox-client"
-version = "0.1.0"
-source = "git+https://github.com/passboxnet/core?tag=v0.1.0#3221491caa09a2d2bf2427d7a04d7b1dc2f41d71"
+version = "0.1.6"
+source = "git+https://github.com/passboxnet/core?tag=v0.1.6#f9514c387c486f6c5a6233b4ab92ed86ae351b6c"
 dependencies = [
  "data-encoding",
- "passbox-core 0.1.0 (git+https://github.com/passboxnet/core?tag=v0.1.0)",
+ "passbox-core 0.1.6",
  "serde",
  "serde_json",
  "thiserror",
  "ureq",
  "zeroize",
-]
-
-[[package]]
-name = "passbox-core"
-version = "0.1.0"
-source = "git+https://github.com/passboxnet/core?tag=v0.1.0#3221491caa09a2d2bf2427d7a04d7b1dc2f41d71"
-dependencies = [
- "argon2",
- "chacha20poly1305",
- "data-encoding",
- "ed25519-dalek",
- "getrandom 0.4.3",
- "hkdf 0.13.0",
- "hmac 0.13.0",
- "opaque-ke",
- "p256",
- "rand_core 0.6.4",
- "serde",
- "serde_json",
- "sha1",
- "sha2 0.10.9",
- "sha2 0.11.0",
- "thiserror",
- "x-wing",
- "zeroize",
- "zxcvbn",
 ]
 
 [[package]]
@@ -1894,6 +1868,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "passbox-core"
+version = "0.1.6"
+source = "git+https://github.com/passboxnet/core?tag=v0.1.6#f9514c387c486f6c5a6233b4ab92ed86ae351b6c"
+dependencies = [
+ "argon2",
+ "chacha20poly1305",
+ "data-encoding",
+ "ed25519-dalek",
+ "getrandom 0.4.3",
+ "hkdf 0.13.0",
+ "hmac 0.13.0",
+ "opaque-ke",
+ "p256",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2 0.10.9",
+ "sha2 0.11.0",
+ "thiserror",
+ "x-wing",
+ "zeroize",
+ "zxcvbn",
+]
+
+[[package]]
 name = "passbox-server"
 version = "0.1.0"
 source = "git+https://github.com/passboxnet/server?tag=v0.1.0#27a8a71098d0007a146312eeb7c57e77bed80ae6"
@@ -1906,7 +1906,7 @@ dependencies = [
  "hmac 0.13.0",
  "http-body-util",
  "lettre",
- "passbox-core 0.1.0 (git+https://github.com/passboxnet/passbox-core?tag=v0.1.0)",
+ "passbox-core 0.1.0",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -2196,7 +2196,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2253,7 +2253,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2854,7 +2854,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3363,7 +3363,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

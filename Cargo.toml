@@ -13,8 +13,8 @@ name = "pbx"
 path = "src/main.rs"
 
 [dependencies]
-passbox-client = { git = "https://github.com/passboxnet/core", tag = "v0.1.0" }
-passbox-core = { git = "https://github.com/passboxnet/core", tag = "v0.1.0" }
+passbox-client = { git = "https://github.com/passboxnet/core", tag = "v0.1.6" }
+passbox-core = { git = "https://github.com/passboxnet/core", tag = "v0.1.6" }
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 dirs = "7"
