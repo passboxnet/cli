@@ -2011,7 +2011,7 @@ dependencies = [
 
 [[package]]
 name = "passbox-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -2022,7 +2022,7 @@ dependencies = [
  "gethostname",
  "open",
  "passbox-client",
- "passbox-core 0.1.6",
+ "passbox-core 0.1.7",
  "passbox-server",
  "regex",
  "rexpect",
@@ -2034,11 +2034,11 @@ dependencies = [
 
 [[package]]
 name = "passbox-client"
-version = "0.1.6"
-source = "git+https://github.com/passboxnet/core?rev=dfacec1fdb1ee6cd785cbd95862a59fe3fc04371#dfacec1fdb1ee6cd785cbd95862a59fe3fc04371"
+version = "0.1.7"
+source = "git+https://github.com/passboxnet/core?tag=v0.1.7#97225016762c5e8ee740e4c0bf8989b5e4ee9ccc"
 dependencies = [
  "data-encoding",
- "passbox-core 0.1.6",
+ "passbox-core 0.1.7",
  "serde",
  "serde_json",
  "thiserror",
@@ -2075,8 +2075,8 @@ dependencies = [
 
 [[package]]
 name = "passbox-core"
-version = "0.1.6"
-source = "git+https://github.com/passboxnet/core?rev=dfacec1fdb1ee6cd785cbd95862a59fe3fc04371#dfacec1fdb1ee6cd785cbd95862a59fe3fc04371"
+version = "0.1.7"
+source = "git+https://github.com/passboxnet/core?tag=v0.1.7#97225016762c5e8ee740e4c0bf8989b5e4ee9ccc"
 dependencies = [
  "argon2",
  "chacha20poly1305",
@@ -2101,8 +2101,8 @@ dependencies = [
 
 [[package]]
 name = "passbox-server"
-version = "0.2.2"
-source = "git+https://github.com/passboxnet/server?rev=2ea3dad91367b6104372ac3df125fb958bc9acc5#2ea3dad91367b6104372ac3df125fb958bc9acc5"
+version = "0.2.3"
+source = "git+https://github.com/passboxnet/server?tag=v0.2.3#c8548e59ea3c48851b8c0f2d26c97209f8805462"
 dependencies = [
  "anyhow",
  "async-trait",

@@ -315,7 +315,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install pbx
         env:
-          PBX_VERSION: 0.1.0
+          PBX_VERSION: 0.1.1
         run: |
           curl -fsSL "https://raw.githubusercontent.com/passboxnet/cli/v$PBX_VERSION/install.sh" | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
