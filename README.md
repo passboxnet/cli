@@ -18,6 +18,15 @@ On Windows (PowerShell):
 irm https://raw.githubusercontent.com/passboxnet/cli/main/install.ps1 | iex
 ```
 
+Then sign in with your browser, where you are signed in to Passbox already:
+
+```sh
+pbx login                                        # the Passbox cloud
+pbx login --server https://passbox.example.com   # a self-hosted server
+```
+
+Approve the request in the browser and type your master password in the terminal; it never leaves your machine. For CI and other machines without a person at the keyboard, use a service account token instead (`PASSBOX_SERVICE_ACCOUNT_TOKEN`); `pbx` never prompts or opens a browser there. See [docs/cli.md](docs/cli.md#sign-in) and [CI and headless](docs/cli.md#ci-and-headless).
+
 You can also download an archive for your platform from the [releases](https://github.com/passboxnet/cli/releases) and check it against `SHA256SUMS`, or build from source with Rust: `cargo install --locked --git https://github.com/passboxnet/cli passbox-cli`. Details, including how to verify the build provenance, are in [docs/cli.md](docs/cli.md#install).
 
 ## Development
@@ -27,6 +36,8 @@ cargo build
 cargo run -- totp JBSWY3DPEHPK3PXP
 PASSBOX_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres cargo test
 ```
+
+The browser sign-in tests drive `pbx` in a pseudo-terminal (Unix only).
 
 The tests start a real server from [passboxnet/server](https://github.com/passboxnet/server) (a git dev-dependency). The client library comes from [passboxnet/core](https://github.com/passboxnet/core).
 

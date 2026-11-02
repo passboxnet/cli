@@ -13,22 +13,34 @@ name = "pbx"
 path = "src/main.rs"
 
 [dependencies]
-passbox-client = { git = "https://github.com/passboxnet/core", tag = "v0.1.6" }
-passbox-core = { git = "https://github.com/passboxnet/core", tag = "v0.1.6" }
+# Pinned to the passboxnet/core commit with the browser sign-in until it is
+# released; switch back to a release tag then.
+passbox-client = { git = "https://github.com/passboxnet/core", rev = "dfacec1fdb1ee6cd785cbd95862a59fe3fc04371" }
+passbox-core = { git = "https://github.com/passboxnet/core", rev = "dfacec1fdb1ee6cd785cbd95862a59fe3fc04371" }
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
 dirs = "7"
 rpassword = "7"
 serde_json = "1"
 clap_complete = "=4.6.11"
+# Ctrl+C withdraws a pending browser sign-in on the server.
+ctrlc = "3"
+# Opens the sign-in link in the default browser.
+open = "5"
+# This machine's name in the device list and on the browser sign-in page.
+gethostname = "1"
 # Rules of `pbx scan`; already used by other dependencies.
 regex = "=1.13.1"
 
 [dev-dependencies]
 axum = "0.8"
-passbox-server = { git = "https://github.com/passboxnet/server", tag = "v0.1.0" }
+passbox-server = { git = "https://github.com/passboxnet/server", rev = "2ea3dad91367b6104372ac3df125fb958bc9acc5" }
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
+
+# The browser sign-in needs a terminal: its tests drive pbx in a pseudo-terminal.
+[target.'cfg(unix)'.dev-dependencies]
+rexpect = "0.7"
 
 [lints.rust]
 unsafe_code = "forbid"

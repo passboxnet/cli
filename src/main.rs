@@ -1,5 +1,9 @@
 //! `pbx`, the Passbox command-line client.
 //!
+//! `pbx login` signs in through a signed-in browser (or with `--email`, by
+//! typing the Secret Key). Without a terminal, or with `CI` set, `pbx` never
+//! prompts or opens a browser.
+//!
 //! Vault commands unlock the account on every call: the master password is
 //! read from `PASSBOX_PASSWORD` (for scripts and CI) or prompted for. With
 //! `PASSBOX_SERVICE_ACCOUNT_TOKEN` set, they use that service account
@@ -7,6 +11,7 @@
 //! offline.
 
 mod items;
+mod login;
 mod mcp;
 mod scan;
 mod secrets;
@@ -32,22 +37,36 @@ struct Cli {
     #[arg(long, global = true)]
     json: bool,
 
+    /// Without a command: the status, or the browser sign-in when this
+    /// machine is not signed in (in a terminal).
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Sign in to a Passbox server on this machine.
-    Signin {
-        /// Server URL, for example https://passbox.example.com.
-        #[arg(long, env = "PASSBOX_SERVER")]
+    /// Sign in on this machine: approve in a browser where you are signed
+    /// in, then enter the master password. With --email, type the Secret
+    /// Key instead (no browser).
+    #[command(visible_alias = "signin")]
+    Login {
+        /// Server URL, for a self-hosted server: https://passbox.example.com.
+        #[arg(long, env = "PASSBOX_SERVER", default_value = login::DEFAULT_SERVER)]
         server: String,
+        /// Sign in without a browser, with the Secret Key.
         #[arg(long, env = "PASSBOX_EMAIL")]
-        email: String,
-        /// Secret Key from the Emergency Kit (prompted for if omitted).
-        #[arg(long, env = "PASSBOX_SECRET_KEY", hide_env_values = true)]
+        email: Option<String>,
+        /// Secret Key from the Emergency Kit (with --email; prompted for if omitted).
+        #[arg(
+            long,
+            env = "PASSBOX_SECRET_KEY",
+            hide_env_values = true,
+            requires = "email"
+        )]
         secret_key: Option<String>,
+        /// Only print the sign-in link; do not open a browser (for example over SSH).
+        #[arg(long, conflicts_with = "email")]
+        no_browser: bool,
     },
     /// Remove the account and its cache from this machine.
     Signout,
@@ -156,12 +175,22 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let data_dir = cli.data_dir.clone();
     let json = cli.json;
-    match cli.command {
-        Command::Signin {
+    let Some(command) = cli.command else {
+        return vault::overview(data_dir);
+    };
+    match command {
+        Command::Login {
             server,
-            email,
+            email: Some(email),
             secret_key,
+            ..
         } => vault::signin(data_dir, &server, &email, secret_key)?,
+        Command::Login {
+            server,
+            email: None,
+            no_browser,
+            ..
+        } => login::browser(data_dir, &server, no_browser, None)?,
         Command::Signout => vault::signout(data_dir)?,
         Command::Status => vault::status(data_dir, json)?,
         Command::Item(command) => items::run(data_dir, command, json)?,

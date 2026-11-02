@@ -71,13 +71,46 @@ pbx completions powershell >> $PROFILE
 ## Sign in
 
 ```sh
-pbx signin --server https://passbox.example.com --email you@example.com
-# prompts for the Secret Key and the master password
+pbx login
 ```
+
+```text
+Press Enter to sign in with your browser (or Ctrl+C to cancel)...
+Open this link in a browser where you are signed in to Passbox:
+https://app.passbox.net/#/cli-login/7j4hhxsgrdc9m21dnzjntb31mw#…
+Waiting for approval... ✓ you@example.com (approved on Chrome on macOS)
+Master password:
+✓ Signed in as you@example.com on https://app.passbox.net (42 items).
+  Vaults: Private, Work
+```
+
+`pbx login` asks you to press Enter and opens the Passbox web vault in your browser. The page shows the device name, the IP address and the time of the request and asks "Was that you?". Approve it there, then type your master password in the terminal. A second factor is asked for like at every sign-in. The browser sends this machine your email and Secret Key, encrypted for a key that only this `pbx` process has; **your master password never leaves the terminal**. The request is valid for 10 minutes; Ctrl+C withdraws it. Only approve requests you started yourself: whoever you approve gets your Secret Key. How it works and why it is safe against a malicious server: [recovery.md](https://github.com/passboxnet/core/blob/main/docs/architecture/recovery.md#signing-in-pbx-from-the-browser).
+
+`pbx` without a command shows who is signed in (account, server, a few commands). On a machine that is not signed in it offers this browser sign-in.
+
+**Self-hosted server:** pass its URL, or set it once in your shell profile:
+
+```sh
+pbx login --server https://passbox.example.com
+export PASSBOX_SERVER=https://passbox.example.com   # used by pbx login and pbx alone
+```
+
+The default is the Passbox cloud, `https://app.passbox.net`.
+
+**Over SSH** (or on a machine without a browser), `pbx` only prints the link. Open it on your laptop, where you are signed in; the approval reaches the remote machine through the server. `--no-browser` prints the link without opening a browser anywhere.
+
+**Without a browser:** sign in with the Secret Key from your Emergency Kit instead:
+
+```sh
+pbx login --email you@example.com      # prompts for the Secret Key and the master password
+pbx login --server https://passbox.example.com --email you@example.com --secret-key "$SECRET_KEY"
+```
+
+`pbx signin` is the same command as `pbx login`.
 
 The account and an encrypted offline copy of the vault are stored in the data directory (`~/.local/share/passbox/cli` on Linux, the platform equivalent elsewhere; override with `--data-dir` or `PASSBOX_DATA_DIR`). Files are private to the current user.
 
-Every vault command unlocks the account again. The master password is prompted for, or read from `PASSBOX_PASSWORD` for unattended use. When the server is not reachable, `pbx` reads from the offline copy (changes need a connection).
+Every vault command unlocks the account again: `pbx` keeps no unlocked state between commands. The master password is prompted for, or read from `PASSBOX_PASSWORD` for unattended use. When the server is not reachable, `pbx` reads from the offline copy (changes need a connection).
 
 With two-factor sign-in on, `pbx` asks for a code from the authenticator app or a recovery code (or reads it from `PASSBOX_TWO_FACTOR_CODE`) and remembers the machine for 30 days, so later commands only need the master password; set `PASSBOX_REMEMBER_DEVICE=0` to be asked every time. Security keys work in the web app only; on the command line use a code or a recovery code.
 
@@ -254,7 +287,21 @@ repos:
 
 `pbx scan` needs no sign-in, so the hook also works on machines without a Passbox account.
 
-## CI: GitHub Actions
+## CI and headless
+
+`pbx` never prompts and never opens a browser when it does not run in an interactive terminal (standard input and output are not a terminal) or when `CI` is set (`CI=true`, as GitHub Actions, GitLab CI and most CI systems set it). Instead it stops at once with an error that explains what to set:
+
+```text
+Error: signing in needs you at the keyboard, but CI is set, so pbx will not prompt or open a browser.
+For CI and scripts, use a service account: set PASSBOX_SERVICE_ACCOUNT_TOKEN (and PASSBOX_SERVER to your server's URL).
+```
+
+- **Use a service account** (see [above](#service-accounts-ci-servers-agents)): `PASSBOX_SERVICE_ACCOUNT_TOKEN` with `PASSBOX_SERVER` (`https://app.passbox.net` for the Passbox cloud). Every vault command (`read`, `run`, `inject`, `env`, `item`, `list`, `get`, `mcp`) then works without any account, file or prompt on the machine.
+- `pbx` without a command prints the status and these hints instead of starting a sign-in, so it is safe in scripts.
+- Piping output is fine in a terminal: `pbx read pbx://Work/API/token | pbcopy` still asks for the master password, because the prompt is read from the terminal itself.
+- A machine signed in with an account can run unattended with `PASSBOX_PASSWORD` (and `PASSBOX_TWO_FACTOR_CODE`), but prefer a service account: it has only the access you gave it and can be revoked on its own.
+
+### GitHub Actions
 
 ```yaml
 # .github/workflows/deploy.yml
@@ -262,7 +309,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      PASSBOX_SERVER: https://passbox.example.com
+      PASSBOX_SERVER: https://passbox.example.com   # or https://app.passbox.net
       PASSBOX_SERVICE_ACCOUNT_TOKEN: ${{ secrets.PASSBOX_SERVICE_ACCOUNT_TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -279,6 +326,8 @@ jobs:
         run: pbx run -- ./scripts/deploy.sh
       - name: Render the config
         run: pbx inject -i config/prod.tpl -o config/prod.yml
+      - name: One value
+        run: pbx read "pbx://CI/Registry/password" | docker login --username ci --password-stdin registry.example.com
 ```
 
 This downloads the release binary (a few seconds, no Rust toolchain needed) and verifies its checksum. Pinning `PBX_VERSION` and loading the script from the same tag keeps builds reproducible; raise the version when you want a newer `pbx`.
@@ -288,7 +337,8 @@ Give the CI service account read access to a dedicated vault, an expiry, and sto
 ## Other commands
 
 ```sh
-pbx status             # account (and service account) on this machine
+pbx                    # status, or the browser sign-in on a machine that is not signed in
+pbx status             # account (and service account) on this machine (--json)
 pbx signout            # removes the account and the offline copy
 pbx generate -l 32     # password generator (also --pin, --no-symbols, --avoid-ambiguous)
 pbx totp <secret>      # one-time code for an otpauth:// URI or Base32 secret
@@ -297,5 +347,6 @@ pbx totp <secret>      # one-time code for an otpauth:// URI or Base32 secret
 ## Security notes
 
 - Secrets are printed to standard output on request only (`get --field`, `read`, `env` without a command, `inject` without `-o`). Avoid shell history and logs when passing `PASSBOX_PASSWORD`; prefer the prompt, a service account, or a CI secret store.
+- The sign-in link of `pbx login` carries a one-time secret in its fragment (after `#`), which browsers never send to a server. Open it only in your own browser, and approve only requests you started: an approved device gets your Secret Key and, with your master password, your whole account.
 - `pbx env` and `pbx inject -o` write secrets only where you ask; `pbx run` and `pbx env -- <command>` keep them in the child process.
 - A service account token is as powerful as the vault access you gave it. Give it the smallest set of vaults, read only where possible, and an expiry. Revoke it in the web app when a machine is retired or the token may have leaked.

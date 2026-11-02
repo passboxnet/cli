@@ -13,6 +13,8 @@ use passbox_client::{
 use passbox_core::agent_grant::{Decision, PrincipalKind};
 use serde_json::Value;
 
+use crate::login;
+
 pub const TOKEN_ENV: &str = "PASSBOX_SERVICE_ACCOUNT_TOKEN";
 
 pub fn data_dir(dir: Option<PathBuf>) -> anyhow::Result<PathBuf> {
@@ -26,16 +28,18 @@ pub fn data_dir(dir: Option<PathBuf>) -> anyhow::Result<PathBuf> {
 }
 
 /// A client that shows up as this machine in the account's device list.
-fn client(server_url: &str, store: Arc<dyn Store>) -> Client {
+pub fn client(server_url: &str, store: Arc<dyn Store>) -> Client {
     let client = Client::new(server_url, store);
     let host = std::env::var("HOSTNAME")
         .or_else(|_| std::env::var("COMPUTERNAME"))
-        .unwrap_or_default();
+        .ok()
+        .filter(|h| !h.trim().is_empty())
+        .unwrap_or_else(|| gethostname::gethostname().to_string_lossy().into_owned());
     client.set_device(format!("pbx {host}").trim_end(), "cli");
     client
 }
 
-fn store(dir: Option<PathBuf>) -> anyhow::Result<Arc<dyn Store>> {
+pub fn store(dir: Option<PathBuf>) -> anyhow::Result<Arc<dyn Store>> {
     Ok(Arc::new(FileStore::new(data_dir(dir)?)?))
 }
 
@@ -55,6 +59,9 @@ fn password(prompt: &str, prompts: Prompts) -> anyhow::Result<String> {
         _ if prompts == Prompts::Never => bail!(
             "set {TOKEN_ENV} (recommended) or PASSBOX_PASSWORD; pbx mcp cannot ask for a password"
         ),
+        _ if !login::can_prompt() => Err(login::headless_error(
+            "the master password is needed (or PASSBOX_PASSWORD)",
+        )),
         _ => rpassword::prompt_password(prompt).context("could not read the password"),
     }
 }
@@ -87,6 +94,11 @@ where
         .filter(|c| !c.is_empty());
     if from_env.is_none() && prompts == Prompts::Never {
         bail!("this machine needs a two-factor code; run any pbx command in a terminal once first");
+    }
+    if from_env.is_none() && !login::can_prompt() {
+        return Err(login::headless_error(
+            "this machine needs a two-factor code (or PASSBOX_TWO_FACTOR_CODE)",
+        ));
     }
     for attempt in 0..3 {
         let code = match &from_env {
@@ -121,7 +133,7 @@ pub fn unlocked(dir: Option<PathBuf>, prompts: Prompts) -> anyhow::Result<Client
     let probe = Client::new("http://localhost", store.clone());
     let account = probe
         .device_account()?
-        .ok_or_else(|| anyhow!("not signed in; run `pbx signin` first or set {TOKEN_ENV}"))?;
+        .ok_or_else(|| anyhow!("not signed in; run `pbx login` first or set {TOKEN_ENV}"))?;
     let client = client(&account.server_url, store);
     let result = client.unlock(&password("Master password: ", prompts)?);
     let connectivity = match result {
@@ -137,15 +149,23 @@ pub fn unlocked(dir: Option<PathBuf>, prompts: Prompts) -> anyhow::Result<Client
     Ok(client)
 }
 
+/// `pbx login --email`: signs in with the Secret Key typed or passed in,
+/// without a browser.
 pub fn signin(
     dir: Option<PathBuf>,
     server: &str,
     email: &str,
     secret_key: Option<String>,
 ) -> anyhow::Result<()> {
+    let server = server.trim().trim_end_matches('/');
     let client = client(server, store(dir)?);
     let secret_key = match secret_key {
         Some(key) => key,
+        None if !login::can_prompt() => {
+            return Err(login::headless_error(
+                "the Secret Key is needed (--secret-key or PASSBOX_SECRET_KEY)",
+            ));
+        }
         None => {
             rpassword::prompt_password("Secret Key: ").context("could not read the Secret Key")?
         }
@@ -156,9 +176,47 @@ pub fn signin(
         &secret_key,
     );
     second_factor(&client, result, Prompts::Allowed)?;
+    signed_in(&client, server, email)
+}
+
+/// After the browser approved: asks for the master password (three tries
+/// when typed, since the approval cannot be used again) and signs in.
+pub fn finish_browser_signin(
+    client: &Client,
+    server: &str,
+    email: &str,
+    secret_key: &str,
+) -> anyhow::Result<()> {
+    let from_env = std::env::var("PASSBOX_PASSWORD").is_ok_and(|v| !v.is_empty());
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        let result = client.sign_in(
+            email,
+            &password("Master password: ", Prompts::Allowed)?,
+            secret_key,
+        );
+        match result {
+            Err(Error::InvalidCredentials) if !from_env && attempt < 3 => {
+                eprintln!("pbx: wrong master password, try again");
+            }
+            other => {
+                second_factor(client, other, Prompts::Allowed)?;
+                return signed_in(client, server, email);
+            }
+        }
+    }
+}
+
+fn signed_in(client: &Client, server: &str, email: &str) -> anyhow::Result<()> {
     let items = client.items()?.len();
+    let vaults: Vec<String> = client.vaults()?.into_iter().map(|v| v.name).collect();
     client.lock();
-    eprintln!("Signed in as {email} ({items} items).");
+    eprintln!("✓ Signed in as {email} on {server} ({items} items).");
+    if !vaults.is_empty() {
+        eprintln!("  Vaults: {}", vaults.join(", "));
+    }
+    eprintln!("  Try `pbx list`, or `pbx --help` for all commands.");
     Ok(())
 }
 
@@ -178,6 +236,8 @@ pub fn status(dir: Option<PathBuf>, json: bool) -> anyhow::Result<()> {
             "signedIn": account.is_some(),
             "email": account.as_ref().map(|a| a.email.as_str()),
             "server": account.as_ref().map(|a| a.server_url.as_str()),
+            // pbx keeps no unlocked state between commands.
+            "locked": account.is_some(),
             "serviceAccount": token.as_deref().and_then(|t| passbox_core::service_account::Token::parse(t).ok()).map(|t| t.id().to_owned()),
         });
         println!("{}", serde_json::to_string_pretty(&value)?);
@@ -190,8 +250,46 @@ pub fn status(dir: Option<PathBuf>, json: bool) -> anyhow::Result<()> {
         }
     }
     match account {
-        Some(account) => println!("{} on {}", account.email, account.server_url),
+        Some(account) => {
+            println!("Signed in as {} on {}", account.email, account.server_url);
+            println!(
+                "Vaults are locked: every command unlocks them with the master password \
+                 (prompted for, or PASSBOX_PASSWORD)."
+            );
+        }
         None => println!("Not signed in."),
+    }
+    Ok(())
+}
+
+/// `pbx` without a command.
+pub fn overview(dir: Option<PathBuf>) -> anyhow::Result<()> {
+    let signed_in = Client::new("http://localhost", store(dir.clone())?)
+        .device_account()?
+        .is_some();
+    let token = std::env::var(TOKEN_ENV).is_ok_and(|t| !t.trim().is_empty());
+    if !signed_in && !token && login::interactive() {
+        let server = std::env::var("PASSBOX_SERVER")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| login::DEFAULT_SERVER.to_owned());
+        return login::offer(dir, &server);
+    }
+    status(dir, false)?;
+    if signed_in || token {
+        println!();
+        println!("  pbx list                    list items");
+        println!("  pbx get <item> --field <f>  print a field");
+        println!("  pbx run -- <command>        run a command with secrets from pbx:// references");
+        println!("  pbx --help                  all commands");
+    } else {
+        println!();
+        println!("Sign in with `pbx login` in a terminal.");
+        println!(
+            "For CI and scripts, set {TOKEN_ENV} (and PASSBOX_SERVER); see \
+             https://github.com/passboxnet/cli/blob/main/docs/cli.md#ci-and-headless"
+        );
+        println!("Run `pbx --help` for all commands.");
     }
     Ok(())
 }
@@ -222,7 +320,10 @@ impl Session {
                 .device_account()?
                 .map(|a| a.server_url)
                 .ok_or_else(|| {
-                    anyhow!("set PASSBOX_SERVER to the server of the service account")
+                    anyhow!(
+                        "set PASSBOX_SERVER to the server of the service account \
+                         (https://app.passbox.net for the Passbox cloud)"
+                    )
                 })?,
         };
         let client = ServiceAccountClient::connect(&server, &token)
